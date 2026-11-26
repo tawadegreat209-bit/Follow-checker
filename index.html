@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Follow Back Checker</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #111; color: #eee; margin: 0; padding: 20px; }
+  .box { max-width: 600px; margin: auto; }
+  h1 { text-align: center; }
+  label { display: block; margin: 15px 0 5px; font-weight: bold; }
+  input[type=file] { width: 100%; padding: 10px; background: #222; color: #eee; border: 1px solid #444; border-radius: 6px; }
+  button { width: 100%; margin-top: 20px; padding: 14px; font-size: 16px; background: #e1306c; color: #fff; border: none; border-radius: 6px; }
+  .stats { display: flex; gap: 10px; margin-top: 25px; }
+  .stat { flex: 1; background: #222; padding: 12px; border-radius: 6px; text-align: center; }
+  .stat b { display: block; font-size: 22px; }
+  h2 { margin-top: 30px; }
+  ul { list-style: none; padding: 0; }
+  li { background: #222; margin: 6px 0; padding: 10px; border-radius: 6px; }
+  a { color: #6cb4ff; text-decoration: none; }
+  .note { font-size: 13px; color: #aaa; text-align: center; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>Follow Back Checker</h1>
+  <p class="note">Your files never leave your phone. Everything runs in your browser.</p>
+
+  <label>1. Upload your followers file (followers_1.json)</label>
+  <input type="file" id="followersFile" accept=".json">
+
+  <label>2. Upload your following file (following.json)</label>
+  <input type="file" id="followingFile" accept=".json">
+
+  <button onclick="analyze()">Check</button>
+
+  <div id="results"></div>
+</div>
+
+<script>
+function readFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(JSON.parse(reader.result));
+    reader.onerror = reject;
+    reader.readAsText(file);
+  });
+}
+
+// Instagram exports store usernames in slightly different places,
+// so this collects them from any layout.
+function extractUsernames(data) {
+  const names = new Set();
+  const items = Array.isArray(data) ? data : (data.relationships_following || data.relationships_followers || []);
+  items.forEach(item => {
+    if (item.string_list_data) {
+      item.string_list_data.forEach(entry => {
+        if (entry.value) names.add(entry.value);
+      });
+    }
+    if (item.title) names.add(item.title);
+  });
+  return names;
+}
+
+async function analyze() {
+  const fFile = document.getElementById('followersFile').files[0];
+  const gFile = document.getElementById('followingFile').files[0];
+  const out = document.getElementById('results');
+
+  if (!fFile || !gFile) {
+    out.innerHTML = '<p>Please upload both files first.</p>';
+    return;
+  }
+
+  try {
+    const followers = extractUsernames(await readFile(fFile));
+    const following = extractUsernames(await readFile(gFile));
+
+    const notBack = [...following].filter(u => !followers.has(u)).sort();
+    const fans = [...followers].filter(u => !following.has(u)).sort();
+
+    const list = arr => arr.map(u =>
+      `<li><a href="https://instagram.com/${u}" target="_blank">@${u}</a></li>`
+    ).join('');
+
+    out.innerHTML = `
+      <div class="stats">
+        <div class="stat"><b>${followers.size}</b>Followers</div>
+        <div class="stat"><b>${following.size}</b>Following</div>
+        <div class="stat"><b>${notBack.length}</b>Don't follow back</div>
+      </div>
+      <h2>Don't follow you back (${notBack.length})</h2>
+      <ul>${list(notBack)}</ul>
+      <h2>You don't follow back (${fans.length})</h2>
+      <ul>${list(fans)}</ul>
+    `;
+  } catch (e) {
+    out.innerHTML = '<p>Something went wrong reading the files. Make sure you picked the JSON files from your Instagram export.</p>';
+  }
+}
+</script>
+</body>
+    </html>
