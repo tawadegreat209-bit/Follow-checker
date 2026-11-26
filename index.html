@@ -2,103 +2,310 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Follow Back Checker</title>
 <style>
-  body { font-family: Arial, sans-serif; background: #111; color: #eee; margin: 0; padding: 20px; }
-  .box { max-width: 600px; margin: auto; }
-  h1 { text-align: center; }
-  label { display: block; margin: 15px 0 5px; font-weight: bold; }
-  input[type=file] { width: 100%; padding: 10px; background: #222; color: #eee; border: 1px solid #444; border-radius: 6px; }
-  button { width: 100%; margin-top: 20px; padding: 14px; font-size: 16px; background: #e1306c; color: #fff; border: none; border-radius: 6px; }
-  .stats { display: flex; gap: 10px; margin-top: 25px; }
-  .stat { flex: 1; background: #222; padding: 12px; border-radius: 6px; text-align: center; }
-  .stat b { display: block; font-size: 22px; }
-  h2 { margin-top: 30px; }
-  ul { list-style: none; padding: 0; }
-  li { background: #222; margin: 6px 0; padding: 10px; border-radius: 6px; }
-  a { color: #6cb4ff; text-decoration: none; }
-  .note { font-size: 13px; color: #aaa; text-align: center; margin-top: 10px; }
+  :root { --bg:#0f1115; --card:#1a1d24; --text:#f2f3f5; --muted:#9aa0ac; --accent:#7c5cff; --good:#34c78a; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--text); padding:16px; max-width:640px; margin:auto; }
+  h1 { font-size:1.4rem; margin:8px 0 4px; }
+  h2 { font-size:1.05rem; margin:0 0 10px; }
+  p.sub { color:var(--muted); margin:0 0 16px; font-size:.9rem; }
+  .card { background:var(--card); border-radius:14px; padding:14px; margin-bottom:14px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:10px; padding:10px 14px; font-size:.95rem; cursor:pointer; }
+  button.ghost { background:#2a2e38; }
+  button:disabled { opacity:.4; }
+  input[type=file], input[type=search], input[type=number] { width:100%; padding:10px; border-radius:10px; border:1px solid #2f3440; background:#12151b; color:var(--text); margin:6px 0; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat { background:#12151b; border-radius:12px; padding:12px; cursor:pointer; border:2px solid transparent; }
+  .stat.active { border-color:var(--accent); }
+  .stat b { display:block; font-size:1.5rem; }
+  .stat span { color:var(--muted); font-size:.8rem; }
+  ul { list-style:none; padding:0; margin:10px 0 0; }
+  li { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #262a33; gap:8px; }
+  li a { color:var(--text); text-decoration:none; word-break:break-all; }
+  li small { color:var(--muted); display:block; }
+  li .open { background:#2a2e38; padding:6px 10px; border-radius:8px; font-size:.8rem; white-space:nowrap; }
+  .pager { display:flex; justify-content:space-between; align-items:center; margin-top:12px; gap:8px; }
+  .muted { color:var(--muted); font-size:.85rem; }
+  .hidden { display:none; }
+  .tip { background:#12151b; border-left:3px solid var(--accent); padding:8px 10px; border-radius:6px; margin:8px 0; font-size:.9rem; }
+  details { margin-bottom:12px; } summary { cursor:pointer; color:var(--accent); }
+  ol { padding-left:20px; color:var(--muted); font-size:.9rem; }
 </style>
 </head>
 <body>
-<div class="box">
   <h1>Follow Back Checker</h1>
-  <p class="note">Your files never leave your phone. Everything runs in your browser.</p>
+  <p class="sub">Your files never leave your phone. Everything runs in your browser.</p>
 
-  <label>1. Upload your followers file (followers_1.json)</label>
-  <input type="file" id="followersFile" accept=".json">
+  <details>
+    <summary>How do I get my Instagram data?</summary>
+    <ol>
+      <li>Instagram app: Settings, then Accounts Center.</li>
+      <li>Your information and permissions, then Download your information.</li>
+      <li>Choose "Followers and following", format <b>JSON</b>, date range "All time".</li>
+      <li>Wait for the email, download the zip.</li>
+      <li>Upload the zip below (or the followers_1.json and following.json files from the connections folder).</li>
+    </ol>
+  </details>
 
-  <label>2. Upload your following file (following.json)</label>
-  <input type="file" id="followingFile" accept=".json">
+  <div class="card">
+    <h2>1. Upload your export</h2>
+    <input type="file" id="files" accept=".zip,.json" multiple>
+    <p class="muted">You can pick the whole zip, or the followers and following JSON files together.</p>
+    <button id="check">Check</button>
+    <p id="msg" class="muted"></p>
+  </div>
 
-  <button onclick="analyze()">Check</button>
+  <div id="results" class="hidden">
+    <div class="card">
+      <h2>2. Your numbers</h2>
+      <div class="grid" id="stats"></div>
+    </div>
 
-  <div id="results"></div>
-</div>
-
-<script>
-function readFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(JSON.parse(reader.result));
-    reader.onerror = reject;
-    reader.readAsText(file);
-  });
-}
-
-// Instagram exports store usernames in slightly different places,
-// so this collects them from any layout.
-function extractUsernames(data) {
-  const names = new Set();
-  const items = Array.isArray(data) ? data : (data.relationships_following || data.relationships_followers || []);
-  items.forEach(item => {
-    if (item.string_list_data) {
-      item.string_list_data.forEach(entry => {
-        if (entry.value) names.add(entry.value);
-      });
-    }
-    if (item.title) names.add(item.title);
-  });
-  return names;
-}
-
-async function analyze() {
-  const fFile = document.getElementById('followersFile').files[0];
-  const gFile = document.getElementById('followingFile').files[0];
-  const out = document.getElementById('results');
-
-  if (!fFile || !gFile) {
-    out.innerHTML = '<p>Please upload both files first.</p>';
-    return;
-  }
-
-  try {
-    const followers = extractUsernames(await readFile(fFile));
-    const following = extractUsernames(await readFile(gFile));
-
-    const notBack = [...following].filter(u => !followers.has(u)).sort();
-    const fans = [...followers].filter(u => !following.has(u)).sort();
-
-    const list = arr => arr.map(u =>
-      `<li><a href="https://instagram.com/${u}" target="_blank">@${u}</a></li>`
-    ).join('');
-
-    out.innerHTML = `
-      <div class="stats">
-        <div class="stat"><b>${followers.size}</b>Followers</div>
-        <div class="stat"><b>${following.size}</b>Following</div>
-        <div class="stat"><b>${notBack.length}</b>Don't follow back</div>
+    <div class="card">
+      <h2 id="listTitle"></h2>
+      <p class="muted" id="listHelp"></p>
+      <input type="search" id="search" placeholder="Search a username">
+      <ul id="list"></ul>
+      <div class="pager">
+        <button class="ghost" id="prev">Back</button>
+        <span class="muted" id="pageInfo"></span>
+        <button id="next">Next 10</button>
       </div>
-      <h2>Don't follow you back (${notBack.length})</h2>
-      <ul>${list(notBack)}</ul>
-      <h2>You don't follow back (${fans.length})</h2>
-      <ul>${list(fans)}</ul>
-    `;
-  } catch (e) {
-    out.innerHTML = '<p>Something went wrong reading the files. Make sure you picked the JSON files from your Instagram export.</p>';
+    </div>
+
+    <div class="card">
+      <h2>3. Engagement calculator</h2>
+      <p class="muted">Instagram only gives likes and comments to the account owner, so type them in from your Insights.</p>
+      <input type="number" id="posts" placeholder="Number of recent posts">
+      <input type="number" id="likes" placeholder="Total likes on those posts">
+      <input type="number" id="comments" placeholder="Total comments on those posts">
+      <button id="calc">Calculate</button>
+      <div id="engOut"></div>
+    </div>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+(function () {
+  var PAGE = 10;
+  var data = { followers: [], following: [] };
+  var lists = {};
+  var current = 'notBack';
+  var page = 0;
+  var query = '';
+
+  var $ = function (id) { return document.getElementById(id); };
+  function say(t) { $('msg').textContent = t; }
+
+  var META = {
+    notBack:   { title: 'Not following you back', help: 'You follow them, they do not follow you. Review 10 at a time and unfollow by hand in Instagram.' },
+    fans:      { title: 'You do not follow back', help: 'They follow you, you do not follow them.' },
+    mutual:    { title: 'Mutual follows', help: 'You follow each other.' },
+    recent:    { title: 'Recent followers', help: 'Newest followers first.' },
+    unfollowed:{ title: 'Unfollowed you', help: 'People who followed you at your last check but not now.' }
+  };
+
+  function extract(json, kind) {
+    var arr = Array.isArray(json) ? json : (json.relationships_following || json.relationships_followers || []);
+    var out = [];
+    arr.forEach(function (e) {
+      var s = (e.string_list_data && e.string_list_data[0]) || {};
+      var name = s.value || e.title;
+      if (!name) return;
+      out.push({ name: String(name).toLowerCase(), href: s.href || ('https://www.instagram.com/' + name), ts: s.timestamp || 0 });
+    });
+    return out;
   }
-}
+
+  function readText(file) {
+    return new Promise(function (res, rej) {
+      var r = new FileReader();
+      r.onload = function () { res(r.result); };
+      r.onerror = rej;
+      r.readAsText(file);
+    });
+  }
+
+  function classify(path, json) {
+    var p = path.toLowerCase();
+    var base = p.split('/').pop();
+    if (/^followers(_\d+)?\.json$/.test(base)) return 'followers';
+    if (base === 'following.json') return 'following';
+    return null;
+  }
+
+  async function collect(files) {
+    var found = { followers: [], following: [] };
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      if (/\.zip$/i.test(f.name)) {
+        if (typeof JSZip === 'undefined') throw new Error('Zip reader could not load. Check your internet or upload the JSON files instead.');
+        var zip = await JSZip.loadAsync(f);
+        var names = Object.keys(zip.files);
+        for (var j = 0; j < names.length; j++) {
+          var kind = classify(names[j]);
+          if (kind && !zip.files[names[j]].dir) {
+            var txt = await zip.files[names[j]].async('string');
+            found[kind] = found[kind].concat(extract(JSON.parse(txt), kind));
+          }
+        }
+      } else {
+        var k = classify(f.name);
+        if (k) found[k] = found[k].concat(extract(JSON.parse(await readText(f)), k));
+      }
+    }
+    return found;
+  }
+
+  function dedupe(arr) {
+    var seen = {}, out = [];
+    arr.forEach(function (x) { if (!seen[x.name]) { seen[x.name] = 1; out.push(x); } });
+    return out;
+  }
+
+  function loadSnap() {
+    try { return JSON.parse(localStorage.getItem('fbc_snapshot') || 'null'); } catch (e) { return null; }
+  }
+  function saveSnap(names) {
+    try { localStorage.setItem('fbc_snapshot', JSON.stringify({ date: Date.now(), followers: names })); } catch (e) {}
+  }
+
+  function build() {
+    var fers = data.followers, fing = data.following;
+    var fersSet = {}, fingSet = {};
+    fers.forEach(function (x) { fersSet[x.name] = x; });
+    fing.forEach(function (x) { fingSet[x.name] = x; });
+
+    lists.notBack = fing.filter(function (x) { return !fersSet[x.name]; });
+    lists.fans = fers.filter(function (x) { return !fingSet[x.name]; });
+    lists.mutual = fing.filter(function (x) { return fersSet[x.name]; });
+    lists.recent = fers.slice().sort(function (a, b) { return b.ts - a.ts; });
+
+    var snap = loadSnap();
+    lists.unfollowed = [];
+    var snapDate = null;
+    if (snap && snap.followers) {
+      snapDate = snap.date;
+      lists.unfollowed = snap.followers.filter(function (n) { return !fersSet[n]; })
+        .map(function (n) { return { name: n, href: 'https://www.instagram.com/' + n, ts: 0 }; });
+    }
+    saveSnap(fers.map(function (x) { return x.name; }));
+
+    var monthAgo = Date.now() / 1000 - 30 * 86400;
+    var newCount = fers.filter(function (x) { return x.ts > monthAgo; }).length;
+
+    var cards = [
+      ['followers', fers.length, 'Followers', null],
+      ['following', fing.length, 'Following', null],
+      ['notBack', lists.notBack.length, 'Not following you back', 'notBack'],
+      ['fans', lists.fans.length, 'You do not follow back', 'fans'],
+      ['mutual', lists.mutual.length, 'Mutual follows', 'mutual'],
+      ['recent', newCount, 'New followers (30 days)', 'recent'],
+      ['unfollowed', snap ? lists.unfollowed.length : '-', snap ? 'Unfollowed you' : 'Unfollowed you (needs a 2nd check later)', 'unfollowed']
+    ];
+    var box = $('stats');
+    box.innerHTML = '';
+    cards.forEach(function (c) {
+      var d = document.createElement('div');
+      d.className = 'stat';
+      d.dataset.key = c[3] || '';
+      d.innerHTML = '<b>' + c[1] + '</b><span>' + c[2] + '</span>';
+      if (c[3]) d.addEventListener('click', function () { show(c[3]); });
+      else d.style.cursor = 'default';
+      box.appendChild(d);
+    });
+    $('results').classList.remove('hidden');
+    show('notBack');
+  }
+
+  function show(key) {
+    current = key; page = 0; query = ''; $('search').value = '';
+    var els = $('stats').children;
+    for (var i = 0; i < els.length; i++) els[i].classList.toggle('active', els[i].dataset.key === key);
+    $('listTitle').textContent = META[key].title;
+    $('listHelp').textContent = META[key].help;
+    draw();
+  }
+
+  function draw() {
+    var all = (lists[current] || []).filter(function (x) { return !query || x.name.indexOf(query) !== -1; });
+    var pages = Math.max(1, Math.ceil(all.length / PAGE));
+    if (page >= pages) page = pages - 1;
+    var slice = all.slice(page * PAGE, page * PAGE + PAGE);
+    var ul = $('list');
+    ul.innerHTML = '';
+    if (!slice.length) {
+      var e = document.createElement('li');
+      e.textContent = 'Nothing here.';
+      ul.appendChild(e);
+    }
+    slice.forEach(function (x) {
+      var li = document.createElement('li');
+      var left = document.createElement('div');
+      var a = document.createElement('a');
+      a.href = x.href; a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = '@' + x.name;
+      left.appendChild(a);
+      if (current === 'recent' && x.ts) {
+        var s = document.createElement('small');
+        s.textContent = new Date(x.ts * 1000).toLocaleDateString();
+        left.appendChild(s);
+      }
+      var open = document.createElement('a');
+      open.className = 'open'; open.href = x.href; open.target = '_blank'; open.rel = 'noopener';
+      open.textContent = 'Open profile';
+      li.appendChild(left); li.appendChild(open);
+      ul.appendChild(li);
+    });
+    $('pageInfo').textContent = 'Page ' + (page + 1) + ' of ' + pages + ' (' + all.length + ')';
+    $('prev').disabled = page === 0;
+    $('next').disabled = page >= pages - 1;
+  }
+
+  $('check').addEventListener('click', async function () {
+    var f = $('files').files;
+    if (!f.length) { say('Choose your zip or JSON files first.'); return; }
+    say('Reading your files...');
+    try {
+      var found = await collect(f);
+      data.followers = dedupe(found.followers);
+      data.following = dedupe(found.following);
+      if (!data.followers.length || !data.following.length) {
+        say('I could not find both a followers file and a following file. Make sure you exported in JSON format.');
+        return;
+      }
+      say('Done. Scroll down for your results.');
+      build();
+    } catch (err) {
+      say('Something went wrong: ' + err.message);
+    }
+  });
+
+  $('next').addEventListener('click', function () { page++; draw(); });
+  $('prev').addEventListener('click', function () { page--; draw(); });
+  $('search').addEventListener('input', function (e) { query = e.target.value.toLowerCase().replace('@', ''); page = 0; draw(); });
+
+  $('calc').addEventListener('click', function () {
+    var posts = +$('posts').value, likes = +$('likes').value, comments = +$('comments').value;
+    var fl = data.followers.length;
+    var out = $('engOut');
+    if (!posts || !fl) { out.innerHTML = '<p class="muted">Enter your number of posts first.</p>'; return; }
+    var avg = (likes + comments) / posts;
+    var rate = (avg / fl) * 100;
+    var verdict = rate >= 6 ? 'Excellent' : rate >= 3 ? 'Good' : rate >= 1 ? 'Average' : 'Low';
+    var ratio = data.following.length / fl;
+    var tips = [];
+    if (rate < 3) tips.push('Ask a question or add a clear call to action in your captions to spark comments.');
+    if (rate < 3) tips.push('Post when your followers are online. Check the Most Active Times section in Instagram Insights.');
+    if (ratio > 1.5) tips.push('You follow many more people than follow you. Trimming accounts that never follow back can make your profile look stronger.');
+    tips.push('Reels usually reach more people than photos. Try a few short ones each week.');
+    tips.push('Reply to comments within the first hour, it boosts your posts.');
+    out.innerHTML = '<div class="tip"><b>' + avg.toFixed(1) + '</b> average interactions per post<br><b>' + rate.toFixed(2) + '%</b> engagement rate (' + verdict + ')</div>' +
+      tips.map(function (t) { return '<div class="tip">' + t + '</div>'; }).join('');
+  });
+})();
 </script>
 </body>
-    </html>
+</html>
